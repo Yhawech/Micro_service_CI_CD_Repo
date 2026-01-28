@@ -10,34 +10,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
+      # ---------------- CHECKOUT ----------------
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: false
-          fetch-depth: 0
 
-      - name: Debug folder structure
-        run: |
-          pwd
-          ls
-          ls frontend
-
+      # ---------------- DOCKER HUB LOGIN ----------------
       - name: Login to Docker Hub
         run: |
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
             -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
+      # ---------------- BUILD & PUSH BACKEND ----------------
       - name: Build & Push Backend
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/backend:latest ./backend
           docker push ${{ secrets.DOCKER_USERNAME }}/backend:latest
 
+      # ---------------- BUILD & PUSH FRONTEND ----------------
       - name: Build & Push Frontend
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/frontend:latest ./frontend
           docker push ${{ secrets.DOCKER_USERNAME }}/frontend:latest
 
+      # ---------------- DEPLOY TO EC2 ----------------
       - name: Install Docker & Run Containers on EC2
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -47,8 +42,9 @@ jobs:
           script: |
             set -e
 
-            echo "Starting deployment..."
+            echo "🚀 Starting deployment..."
 
+            # -------- INSTALL DOCKER --------
             if ! command -v docker &> /dev/null
             then
               sudo apt update -y
@@ -57,11 +53,14 @@ jobs:
               sudo systemctl enable docker
             fi
 
+            # -------- DOCKER LOGIN --------
             echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login \
               -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
+            # -------- NETWORK --------
             sudo docker network create mern-network || true
 
+            # -------- MONGO --------
             sudo docker stop mongo || true
             sudo docker rm mongo || true
             sudo docker run -d \
@@ -72,6 +71,7 @@ jobs:
               -v mongo_data:/data/db \
               mongo
 
+            # -------- BACKEND --------
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/backend:latest
             sudo docker stop backend || true
             sudo docker rm backend || true
@@ -83,6 +83,7 @@ jobs:
               -e MONGO_URL=mongodb://mongo:27017/mern_demo \
               ${{ secrets.DOCKER_USERNAME }}/backend:latest
 
+            # -------- FRONTEND --------
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/frontend:latest
             sudo docker stop frontend || true
             sudo docker rm frontend || true
@@ -92,4 +93,4 @@ jobs:
               -p 3000:3000 \
               ${{ secrets.DOCKER_USERNAME }}/frontend:latest
 
-            echo "Deployment completed successfully"
+            echo "✅ Deployment completed successfully"
